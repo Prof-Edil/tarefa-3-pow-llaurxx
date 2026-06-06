@@ -1,0 +1,79 @@
+import hashlib
+import struct
+import time
+import os
+from multiprocessing import Process, Value
+
+VERSAO         = 2
+BLOCO_ANTERIOR = "00000000d1145790a8694403d4063f323d499e655c83426834d4ce2f8dd4a2ee"
+RAIZ_MERKLE    = "c0a692de10b69e2381a2856dcb0d0736dcd307bf25af7ce74831bf25793de626"
+TIMESTAMP      = 1231006506  
+
+ALVO = bytes(4)  
+
+# Parte fixa do cabeçalho 
+cabecalho_base = (
+    struct.pack('>I', VERSAO)      +
+    bytes.fromhex(BLOCO_ANTERIOR)  +
+    bytes.fromhex(RAIZ_MERKLE)     +
+    struct.pack('>I', TIMESTAMP)
+)
+
+def sha256(dados: bytes) -> bytes:
+    return hashlib.sha256(dados).digest()
+
+def minerar(id_processo, num_processos, achou):
+    nonce = id_processo  # começa no seu próprio nonce
+
+    while not achou.value:
+        cabecalho = cabecalho_base + struct.pack('>Q', nonce)
+        resultado = sha256(cabecalho)
+
+        if resultado[:4] == ALVO:
+            # Marca que achou para os outros processos pararem
+            achou.value = 1
+
+            print(f"\n✓ Bloco minerado pelo processo {id_processo}!")
+            print(f"  Nonce:     {nonce}")
+            print(f"  Hash:      {resultado.hex()}")
+            print(f"  Cabeçalho: {cabecalho.hex()}")
+
+            os.makedirs('solutions', exist_ok=True)
+            with open('solutions/exercise03.txt', 'w') as f:
+                f.write(cabecalho.hex() + '\n')
+            print("\nSalvo em solutions/exercise03.txt")
+            return
+
+        nonce += num_processos  # pula para o próximo nonce deste processo
+
+if __name__ == '__main__':
+    NUM_PROCESSOS = 8  
+
+    # Variável compartilhada entre processos: 0 = minerando, 1 = achou
+    achou = Value('i', 0)
+
+    print(f"Iniciando mineração com {NUM_PROCESSOS} processos paralelos...")
+    print(f"Alvo: 00000000ffff0000000000000000000000000000000000000000000000000000")
+    print()
+
+    inicio = time.time()
+
+    # Cria e inicia os processos
+    processos = []
+    for i in range(NUM_PROCESSOS):
+        p = Process(target=minerar, args=(i, NUM_PROCESSOS, achou))
+        p.start()
+        processos.append(p)
+
+    # Mostra progresso enquanto espera
+    while not achou.value:
+        time.sleep(10)
+        tempo = time.time() - inicio
+        print(f"  {tempo:.0f}s decorridos...", end='\r')
+
+    # Para todos os processos
+    for p in processos:
+        p.terminate()
+        p.join()
+
+    print(f"\nTempo total: {time.time() - inicio:.1f} segundos")

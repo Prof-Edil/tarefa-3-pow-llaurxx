@@ -1,0 +1,175 @@
+import csv
+from collections import defaultdict
+
+mempool = {}
+filhos = defaultdict(set)
+ 
+with open('data/mempool.csv', 'r') as arquivo:
+    for linha in arquivo:
+        linha = linha.strip()
+        if not linha:
+            continue
+        partes = linha.split(',')
+        txid = partes[0]
+        taxa = int(partes[1])
+        peso = int(partes[2])
+        pais = [p for p in partes[3].split(';') if p] if len(partes) > 3 and partes[3] else []
+        mempool[txid] = {'taxa': taxa, 'peso': peso, 'pais': pais}
+        for pai in pais:
+            filhos[pai].add(txid)
+ 
+print(f"Tamanho da mempool: {len(mempool)} transações")
+ 
+TX_OBRIGATORIA = "4c50e3dad7f98bceb6441f96b23748dea84fbdb7cedd603441e6ea4a574d04a6"
+PESO_MAXIMO = 4_000_000
+ 
+# Calcula todos os ancestrais de uma transação recursivamente
+def calcular_ancestrais(txid, cache={}):
+    if txid in cache:
+        return cache[txid]
+    ancestrais = set()
+    for pai in mempool[txid]['pais']:
+        if pai in mempool:
+            ancestrais.add(pai)
+            ancestrais |= calcular_ancestrais(pai, cache)
+    cache[txid] = ancestrais
+    return ancestrais
+ 
+# Pré-computa ancestrais de todas as transações
+print("Calculando ancestrais...")
+cache_ancestrais = {}
+for txid in mempool:
+    calcular_ancestrais(txid, cache_ancestrais)
+ 
+# Calcula taxa e peso total de um pacote (tx + ancestrais ainda não incluídos)
+def estatisticas_pacote(txid, ja_incluidos):
+    necessarios = cache_ancestrais[txid] - ja_incluidos
+    necessarios.add(txid)
+    taxa_total = sum(mempool[t]['taxa'] for t in necessarios)
+    peso_total = sum(mempool[t]['peso'] for t in necessarios)
+    return taxa_total, peso_total, necessarios
+ 
+# Adiciona uma transação e seus pais em ordem topológica
+selecionados = set()
+ordenados = []
+ 
+def adicionar_topologico(txid):
+    if txid in selecionados:
+        return
+    for pai in mempool[txid]['pais']:
+        if pai in mempool and pai not in selecionados:
+            adicionar_topologico(pai)
+    selecionados.add(txid)
+    ordenados.append(txid)
+
+adicionar_topologico(TX_OBRIGATORIA)
+peso_atual = sum(mempool[t]['peso'] for t in selecionados)
+print(f"Após incluir tx obrigatória: {len(selecionados)} txs, peso={peso_atual}")
+ 
+# repete até não caber mais nenhuma transação
+melhorou = True
+while melhorou:
+    melhorou = False
+    melhor_razao = -1
+    melhor_tx = None
+ 
+    for txid in mempool:
+        if txid in selecionados:
+            continue
+        taxa_total, peso_total, _ = estatisticas_pacote(txid, selecionados)
+        if peso_atual + peso_total > PESO_MAXIMO:
+            continue
+        razao = taxa_total / peso_total
+        if razao > melhor_razao:
+            melhor_razao = razao
+            melhor_tx = txid
+ 
+    if melhor_tx is not None:
+        adicionar_topologico(melhor_tx)
+        peso_atual = sum(mempool[t]['peso'] for t in selecionados)
+        melhorou = True
+ 
+taxa_total_bloco = sum(mempool[t]['taxa'] for t in selecionados)
+print(f"\nResultado: {len(selecionados)} transações")
+print(f"Peso total: {peso_atual} / {PESO_MAXIMO}")
+print(f"Taxas totais: {taxa_total_bloco} sats")
+print(f"TX obrigatória incluída: {TX_OBRIGATORIA in selecionados}")
+ 
+# Verifica ordem topológica
+for i, txid in enumerate(ordenados):
+    for pai in mempool[txid]['pais']:
+        if pai in selecionados:
+            assert pai in ordenados[:i], f"Pai {pai} aparece depois do filho {txid}!"
+ 
+print("Ordem topológica verificada ✓")
+ 
+import os
+os.makedirs('solutions', exist_ok=True)
+with open('solutions/exercise01.txt', 'w') as saida:
+    for txid in ordenados:
+        saida.write(txid + '\n')
+ 
+print("Salvo em solutions/exercise01.txt")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,83 @@
+import hashlib
+ 
+TX_ALVO = "49ff8cccf1ca12179e9ae7a4760f550b5a18401b27e1e057604e27c3e10c08fb"
+ 
+with open('data/ex02_txid_list.txt', 'r') as arquivo:
+    lista_txids = [linha.strip() for linha in arquivo if linha.strip()]
+ 
+print(f"Total de transações: {len(lista_txids)}")
+print(f"TX alvo encontrada na posição: {lista_txids.index(TX_ALVO)}")
+ 
+# Função de hash SHA256
+def sha256(dados: bytes) -> bytes:
+    return hashlib.sha256(dados).digest()
+ 
+# Converte txid hex para bytes brutos
+def txid_para_bytes(txid: str) -> bytes:
+    return bytes.fromhex(txid)
+ 
+# Monta o nível base da árvore: cada txid vira seus bytes brutos
+nivel_atual = [txid_para_bytes(txid) for txid in lista_txids]
+indice_alvo = lista_txids.index(TX_ALVO)
+prova = []
+ 
+# Sobe a árvore nível por nível
+indice = indice_alvo
+while len(nivel_atual) > 1:
+    proximo_nivel = []
+ 
+    # Determina o irmão do índice atual e guarda na prova
+    if indice % 2 == 0:
+        # Índice par: irmão está à direita
+        indice_irmao = indice + 1 if indice + 1 < len(nivel_atual) else indice
+        irmao = nivel_atual[indice_irmao]
+        prova.append(irmao.hex())
+    else:
+        # Índice ímpar: irmão está à esquerda
+        indice_irmao = indice - 1
+        irmao = nivel_atual[indice_irmao]
+        prova.append(irmao.hex())
+ 
+    # Monta o próximo nível combinando pares
+    for i in range(0, len(nivel_atual), 2):
+        esquerda = nivel_atual[i]
+        direita = nivel_atual[i + 1] if i + 1 < len(nivel_atual) else nivel_atual[i]
+        combinado = sha256(esquerda + direita)
+        proximo_nivel.append(combinado)
+ 
+    nivel_atual = proximo_nivel
+    indice = indice // 2
+ 
+raiz_merkle = nivel_atual[0].hex()
+print(f"\nRaiz Merkle: {raiz_merkle}")
+print(f"Prova de inclusão ({len(prova)} irmãos):")
+for i, irmao in enumerate(prova):
+    print(f"  Nível {i}: {irmao}")
+ 
+# Verifica a prova recalculando o caminho até a raiz
+print("\nVerificando prova...")
+hash_atual = txid_para_bytes(TX_ALVO)
+indice = lista_txids.index(TX_ALVO)
+ 
+nivel_tamanho = len(lista_txids)
+for irmao_hex in prova:
+    irmao = bytes.fromhex(irmao_hex)
+    if indice % 2 == 0:
+        hash_atual = sha256(hash_atual + irmao)
+    else:
+        hash_atual = sha256(irmao + hash_atual)
+    indice = indice // 2
+    nivel_tamanho = (nivel_tamanho + 1) // 2
+ 
+assert hash_atual.hex() == raiz_merkle, "Prova inválida!"
+print("Prova verificada ✓")
+
+import os
+os.makedirs('solutions', exist_ok=True)
+with open('solutions/exercise02.txt', 'w') as saida:
+    saida.write(raiz_merkle + '\n')
+    for irmao in prova:
+        saida.write(irmao + '\n')
+ 
+print("Salvo em solutions/exercise02.txt")
+
